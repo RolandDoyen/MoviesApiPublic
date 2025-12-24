@@ -1,12 +1,19 @@
+using Asp.Versioning;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
+using Movies.API.Configuration;
+using Movies.API.Middleware;
 using Movies.API.Profiles;
 using Movies.BLL.BLL;
 using Movies.BLL.Interfaces;
 using Movies.BLL.Profiles;
 using Movies.DAL;
+using Movies.DAL.Interfaces;
+using Movies.DAL.Repositories;
+using Swashbuckle.AspNetCore.SwaggerGen;
 using System.Text;
 
 try
@@ -14,9 +21,8 @@ try
     var builder = WebApplication.CreateBuilder(args);
 
     // Read JWT secret from configuration (appsettings.json)
-    var jwtSecret = builder.Configuration["Jwt:Secret"];
-    if (string.IsNullOrEmpty(jwtSecret))
-        throw new Exception("JWT secret missing in configuration (Jwt:Secret).");
+    var jwtSettings = builder.Configuration.GetSection("Jwt");
+    var secretKey = jwtSettings["Secret"] ?? throw new InvalidOperationException("JWT Secret is missing in appsettings.json");
 
     // JWT Authentication
     builder.Services.AddAuthentication(options =>
@@ -28,14 +34,17 @@ try
     {
         options.TokenValidationParameters = new TokenValidationParameters
         {
-            ValidateIssuer = false,
-            ValidateAudience = false,
+            ValidateIssuer = true,
+            ValidateAudience = true,
             ValidateLifetime = true,
             ValidateIssuerSigningKey = true,
-            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSecret)),
-            ClockSkew = TimeSpan.Zero
+            ValidIssuer = jwtSettings["Issuer"],
+            ValidAudience = jwtSettings["Audience"],
+            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secretKey!))
         };
     });
+
+    builder.Services.AddAuthorization();
 
     // CORS Policies
     builder.Services.AddCors(options =>
@@ -58,12 +67,23 @@ try
     });
 
     // DB Context
-    builder.Services.AddDbContext<DataContext>(options => options.UseSqlServer(
-        builder.Configuration.GetConnectionString("DefaultConnection")
-        ));
+    builder.Services.AddDbContext<DataContext>(options =>
+        options.UseSqlServer(
+            builder.Configuration.GetConnectionString("DefaultConnection"),
+            sqlOptions =>
+            {
+                sqlOptions.EnableRetryOnFailure(
+                    maxRetryCount: 5,
+                    maxRetryDelay: TimeSpan.FromSeconds(10),
+                    errorNumbersToAdd: null
+                );
+            }
+        )
+    );
 
     // Dependency injections
     builder.Services.AddTransient<IMovieBLL, MovieBLL>();
+    builder.Services.AddScoped<IMovieRepository, MovieRepository>();
 
     // AutoMapper
     builder.Services.AddAutoMapper(cfg =>
@@ -75,27 +95,25 @@ try
     builder.Services.AddControllers();
     builder.Services.AddEndpointsApiExplorer();
 
+    // API Versioning
+    builder.Services.AddApiVersioning(options =>
+    {
+        options.DefaultApiVersion = new ApiVersion(1, 0);
+        options.AssumeDefaultVersionWhenUnspecified = true;
+        options.ReportApiVersions = true;
+        options.ApiVersionReader = new UrlSegmentApiVersionReader();
+    })
+    .AddApiExplorer(options =>
+    {
+        options.GroupNameFormat = "'v'VVV";
+        options.SubstituteApiVersionInUrl = true;
+    });
+
+    builder.Services.AddTransient<IConfigureOptions<SwaggerGenOptions>, ConfigureSwaggerOptions>();
+
     // Swagger
     builder.Services.AddSwaggerGen(c =>
     {
-        c.SwaggerDoc("v1", new OpenApiInfo
-        {
-            Version = "v1",
-            Title = "Movies API",
-            Description = @"<p><strong>Movies management API</strong></p>
-                        <p>To test the endpoints:</p>
-                        <ol>
-                            <li>Make a <strong>GET</strong> request to <code>/api/v1/Token</code> to obtain your JWT token.</li>
-                            <li>Click the <strong>Authorize</strong> button in Swagger and paste your token.</li>
-                            <li>After authorization, you can test other API endpoints.</li>
-                        </ol>",
-            Contact = new OpenApiContact
-            {
-                Name = "Roland",
-                Email = "roland.doyen@gmail.com"
-            }
-        });
-
         // JWT Configuration in Swagger
         c.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
         {
@@ -108,19 +126,21 @@ try
         });
 
         c.AddSecurityRequirement(new OpenApiSecurityRequirement
-    {
         {
-            new OpenApiSecurityScheme
             {
-                Reference = new OpenApiReference
+                new OpenApiSecurityScheme
                 {
-                    Type = ReferenceType.SecurityScheme,
-                    Id = "Bearer"
-                }
-            },
-            Array.Empty<string>()
-        }
-    });
+                    Reference = new OpenApiReference
+                    {
+                        Type = ReferenceType.SecurityScheme,
+                        Id = "Bearer"
+                    }
+                },
+                Array.Empty<string>()
+            }
+        });
+
+        //c.OperationFilter<SwaggerDefaultValues>();
 
         // XML Comments
         var xmlFile = $"{System.Reflection.Assembly.GetExecutingAssembly().GetName().Name}.xml";
@@ -130,6 +150,11 @@ try
 
 
     var app = builder.Build();
+
+    // Exception Middleware
+    app.UseMiddleware<ExceptionMiddleware>();
+
+    app.UseRouting();
 
     if (app.Environment.IsDevelopment())
     {
@@ -141,16 +166,25 @@ try
     }
 
     app.UseStaticFiles();
+
     app.UseSwagger();
-    app.UseSwaggerUI(c =>
+    app.UseSwaggerUI(options =>
     {
-        c.SwaggerEndpoint("/swagger/v1/swagger.json", "Movies API V1");
-        c.RoutePrefix = "swagger";
+        var descriptions = app.DescribeApiVersions();
+
+        foreach (var description in descriptions)
+        {
+            var url = $"/swagger/{description.GroupName}/swagger.json";
+            var name = description.GroupName.ToUpperInvariant();
+            options.SwaggerEndpoint(url, name);
+        }
     });
 
     app.UseHttpsRedirection();
+
     app.UseAuthentication();
     app.UseAuthorization();
+
     app.MapControllers();
 
     using (var scope = app.Services.CreateScope())

@@ -1,4 +1,7 @@
-﻿namespace Movies.BLL.DTO
+﻿using Microsoft.EntityFrameworkCore;
+using System.ComponentModel.DataAnnotations;
+
+namespace Movies.BLL.DTO
 {
     /// <summary>
     /// Data Transfer Object representing a movie.
@@ -18,7 +21,7 @@
         /// <summary>
         /// Average rating of the movie.
         /// </summary>
-        public decimal Rating { get; set; }
+        public int Rating { get; set; }
 
         /// <summary>
         /// Short synopsis of the movie.
@@ -28,7 +31,7 @@
         /// <summary>
         /// Release year of the movie.
         /// </summary>
-        public int Year { get; set; }
+        public int? Year { get; set; }
 
         /// <summary>
         /// List of genres or styles associated with the movie.

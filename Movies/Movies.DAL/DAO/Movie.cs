@@ -26,9 +26,8 @@ namespace Movies.DAL.DAO
         /// Average rating of the movie.
         /// Must be between 0 and 10, with 1 decimal precision.
         /// </summary>
-        [Precision(2, 1)]
         [Range(0, 10, ErrorMessage = "Rating must be between 0 and 10")]
-        public decimal Rating { get; set; }
+        public int Rating { get; set; }
 
         /// <summary>
         /// Short synopsis of the movie.

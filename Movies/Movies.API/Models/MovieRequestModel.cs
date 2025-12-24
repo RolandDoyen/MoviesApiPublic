@@ -11,8 +11,15 @@ namespace Movies.API.Models
         /// Title of the movie.
         /// Maximum length: 200 characters.
         /// </summary>
+        [Required]
         [MaxLength(200)]
         public string Title { get; set; } = string.Empty;
+
+        /// <summary>
+        /// Average rating of the movie.
+        /// </summary>
+        [Range(0, 10, ErrorMessage = "Rating must be between 0 and 10")]
+        public int Rating { get; set; }
 
         /// <summary>
         /// Short synopsis of the movie.
@@ -22,14 +29,11 @@ namespace Movies.API.Models
         public string Sypnosis { get; set; } = string.Empty;
 
         /// <summary>
-        /// Average rating of the movie.
-        /// </summary>
-        public decimal Rating { get; set; }
-
-        /// <summary>
         /// Release year of the movie.
         /// </summary>
-        public int Year { get; set; }
+        [Required]
+        [Range(1930, 2030, ErrorMessage = "Year must be realistic")]
+        public int? Year { get; set; }
 
         /// <summary>
         /// List of genres or styles associated with the movie.

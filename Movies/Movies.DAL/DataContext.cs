@@ -22,17 +22,12 @@ namespace Movies.DAL
 
         /// <summary>
         /// Configures the entity models and their relationships.
-        /// Sets precision, JSON conversion for lists, unique indexes, and primary keys.
+        /// Sets JSON conversion for lists, unique indexes, and primary keys.
         /// </summary>
         /// <param name="modelBuilder">The model builder used to configure entities.</param>
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);
-
-            // Set decimal precision for Rating
-            modelBuilder.Entity<Movie>()
-                .Property(m => m.Rating)
-                .HasPrecision(2, 1);
 
             // Configure JSON conversion and comparer for list properties
             var comparer = GetListComparer();

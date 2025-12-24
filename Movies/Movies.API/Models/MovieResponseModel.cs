@@ -18,7 +18,7 @@
         /// <summary>
         /// Average rating of the movie.
         /// </summary>
-        public decimal Rating { get; set; }
+        public int Rating { get; set; }
 
         /// <summary>
         /// Short synopsis of the movie.

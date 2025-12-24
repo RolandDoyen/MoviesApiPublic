@@ -1,106 +1,83 @@
 ﻿using AutoMapper;
-using Microsoft.EntityFrameworkCore;
 using Movies.BLL.DTO;
 using Movies.BLL.Interfaces;
 using Movies.Core.Exceptions;
-using Movies.DAL;
 using Movies.DAL.DAO;
+using Movies.DAL.Interfaces;
 
 namespace Movies.BLL.BLL
 {
-    /// <summary>
-    /// Business logic layer for managing movies.
-    /// </summary>
+    /// <inheritdoc cref="IMovieBLL"/>
     public class MovieBLL : IMovieBLL
     {
-        private readonly DataContext _context;
         private readonly IMapper _mapper;
+        private readonly IMovieRepository _movieRepository;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="MovieBLL"/> class.
         /// </summary>
-        /// <param name="context">The database context.</param>
-        /// <param name="mapper">The AutoMapper instance for mapping DTOs and entities.</param>
-        public MovieBLL(DataContext context, IMapper mapper)
+        /// <param name="mapper">The AutoMapper instance for object mapping.</param>
+        /// <param name="movieRepository">The repository for movie data persistence.</param>
+        public MovieBLL(IMapper mapper, IMovieRepository movieRepository)
         {
-            _context = context;
             _mapper = mapper;
+            _movieRepository = movieRepository;
         }
 
-        /// <summary>
-        /// Creates a new movie in the database.
-        /// </summary>
-        /// <param name="movieDTO">The movie data to create.</param>
-        /// <exception cref="MovieAlreadyExistsException">Thrown if a movie with the same title and year already exists.</exception>
+        /// <inheritdoc />
         public async Task CreateAsync(MovieDTO movieDTO)
         {
-            var entity = await _context.Movies.FirstOrDefaultAsync(m => m.Title == movieDTO.Title && m.Year == movieDTO.Year);
-            if (entity != null)
-                throw new MovieAlreadyExistsException();
+            if (await _movieRepository.ExistsAsync(movieDTO.Title, movieDTO.Year ?? 0))
+                throw new MovieAlreadyExistsException($"A movie with the title '{movieDTO.Title}' and year {movieDTO.Year} already exists.");
 
-            movieDTO.Id = Guid.NewGuid();
-            var newMovieEntity = _mapper.Map<Movie>(movieDTO);
-            await _context.Movies.AddAsync(newMovieEntity);
-            await _context.SaveChangesAsync();
+            var entity = _mapper.Map<Movie>(movieDTO);
+            await _movieRepository.AddAsync(entity);
+            await _movieRepository.SaveChangesAsync();
         }
 
-        /// <summary>
-        /// Retrieves all movies from the database.
-        /// </summary>
-        /// <returns>List of all movies as DTOs.</returns>
+        /// <inheritdoc />
         public async Task<List<MovieDTO>> GetAllAsync()
         {
-            var moviesEntity = await _context.Movies.ToListAsync();
-            var moviesDTO = _mapper.Map<List<MovieDTO>>(moviesEntity);
-            return moviesDTO;
+            var moviesEntity = await _movieRepository.GetAllAsync();
+            return _mapper.Map<List<MovieDTO>>(moviesEntity);
         }
 
-        /// <summary>
-        /// Retrieves a movie by its unique identifier.
-        /// </summary>
-        /// <param name="id">The unique identifier of the movie.</param>
-        /// <returns>The movie DTO.</returns>
-        /// <exception cref="MovieNotFoundException">Thrown if the movie does not exist.</exception>
+        /// <inheritdoc />
         public async Task<MovieDTO> GetByIdAsync(Guid id)
         {
-            var movieEntity = await _context.Movies.FindAsync(id);
+            var movieEntity = await _movieRepository.GetByIdAsync(id);
             if (movieEntity == null)
-                throw new MovieNotFoundException();
+                throw new MovieNotFoundException($"The movie with ID '{id}' was not found.");
 
-            var movieDTO = _mapper.Map<MovieDTO>(movieEntity);
-            return movieDTO;
+            return _mapper.Map<MovieDTO>(movieEntity);
         }
 
-        /// <summary>
-        /// Updates an existing movie.
-        /// </summary>
-        /// <param name="id">The unique identifier of the movie to update.</param>
-        /// <param name="updatedMovieDTO">The updated movie data.</param>
-        /// <exception cref="MovieNotFoundException">Thrown if the movie does not exist.</exception>
+        /// <inheritdoc />
         public async Task UpdateAsync(Guid id, MovieDTO updatedMovieDTO)
         {
-            var movieEntity = await _context.Movies.FindAsync(id);
+            var movieEntity = await _movieRepository.GetByIdAsync(id);
             if (movieEntity == null)
-                throw new MovieNotFoundException();
+                throw new MovieNotFoundException($"The movie with ID '{id}' was not found.");
 
-            var updatedMovie = _mapper.Map(updatedMovieDTO, movieEntity);
-            _context.Movies.Update(updatedMovie);
-            await _context.SaveChangesAsync();
+            if (movieEntity.Title != updatedMovieDTO.Title || movieEntity.Year != updatedMovieDTO.Year)
+            {
+                if (await _movieRepository.ExistsAsync(updatedMovieDTO.Title, updatedMovieDTO.Year ?? 0))
+                    throw new MovieAlreadyExistsException($"A movie with the title '{updatedMovieDTO.Title}' and year {updatedMovieDTO.Year} already exists.");
+            }
+
+            _mapper.Map(updatedMovieDTO, movieEntity);
+            await _movieRepository.SaveChangesAsync();
         }
 
-        /// <summary>
-        /// Deletes a movie by its unique identifier.
-        /// </summary>
-        /// <param name="id">The unique identifier of the movie to delete.</param>
-        /// <exception cref="MovieNotFoundException">Thrown if the movie does not exist.</exception>
+        /// <inheritdoc />
         public async Task DeleteAsync(Guid id)
         {
-            var movieEntity = await _context.Movies.FindAsync(id);
+            var movieEntity = await _movieRepository.GetByIdAsync(id);
             if (movieEntity == null)
-                throw new MovieNotFoundException();
+                throw new MovieNotFoundException($"The movie with ID '{id}' was not found.");
 
-            _context.Movies.Remove(movieEntity);
-            await _context.SaveChangesAsync();
+            _movieRepository.Delete(movieEntity);
+            await _movieRepository.SaveChangesAsync();
         }
     }
 }
